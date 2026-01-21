@@ -49,18 +49,19 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
-	fmt.Println("Reading file list...")
+	fmt.Printf("Reading file list from %s...\n", pmp.GetCurrentStorage())
 	files, err := pmp.ListFiles()
 	if err != nil {
 		return fmt.Errorf("failed to list files: %w", err)
 	}
 
 	if len(files) == 0 {
-		fmt.Println("No files on device.")
+		fmt.Printf("No files on %s.\n", pmp.GetCurrentStorage())
+		fmt.Println("\nTip: Use 'pmp300 storage list' to check external SmartMedia card")
 		return nil
 	}
 
-	fmt.Printf("\nFound %d file(s):\n\n", len(files))
+	fmt.Printf("\nFound %d file(s) on %s:\n\n", len(files), pmp.GetCurrentStorage())
 
 	if verboseFlag {
 		// Verbose output

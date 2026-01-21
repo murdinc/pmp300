@@ -93,5 +93,9 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Device:       %s\n", port.Device())
 	fmt.Printf("  Firmware:     v%s\n", version)
 
+	fmt.Printf("\nStorage:\n")
+	fmt.Printf("  Active:       %s\n", pmp.GetCurrentStorage())
+	fmt.Println("  Tip: Use 'pmp300 storage list' to see all storage options")
+
 	return nil
 }
