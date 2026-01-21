@@ -11,6 +11,7 @@ Complete documentation for interfacing with the Diamond Rio PMP300 MP3 player vi
 - [Protocol Specification](#protocol-specification)
 - [Command Reference](#command-reference)
 - [Data Structures](#data-structures)
+- [Modern USB Interface Using Arduino](#modern-usb-interface-using-arduino)
 - [Go Implementation Guide](#go-implementation-guide)
 - [Example Code](#example-code)
 
@@ -39,37 +40,7 @@ The following operations are **fully documented** and supported via the parallel
 - **Switch Flash Memory** - Toggle between internal and external SmartMedia flash
 
 #### ❌ Firmware Operations
-- **Firmware Updates** - **NOT DOCUMENTED** - No evidence of user-accessible firmware update protocol
-- The device has flash ROM firmware, but no public protocol exists for updating it
-- Diamond Multimedia never released firmware update tools for PMP300
-
-### Command-Line Utility Reference
-
-The original Snowblind Alliance RIO utility v1.07 supported these flags:
-
-```bash
-# Display operations
--d                    # Display directory listing
-
-# File management
--u <file>            # Upload file(s) to device
--g <file>            # Download/get file from device
--z <file>            # Delete specific file
--za                  # Delete all files (use instead of initialize)
-
-# Device initialization
--iy                  # Initialize with bad block check (recommended)
--in                  # Initialize without bad block check (faster)
-
-# Hardware configuration
--p <addr>            # Specify parallel port base address (default: 0x378)
--di <microsec>       # Set initialization delay
--dt <microsec>       # Set transmission delay
--dr <microsec>       # Set reception delay
-
-# Debugging
--v                   # Verbose mode
-```
+- **Firmware Updates** - Not supported. No public protocol exists for updating firmware.
 
 ### Operation Details
 
@@ -1292,21 +1263,6 @@ func main() {
 }
 ```
 
-### Advantages of Arduino Approach
-
-✅ **Modern Hardware**: Works with any Mac/PC with USB
-✅ **Native 5V Logic**: No level shifters required
-✅ **Affordable**: $15-30 for Arduino board
-✅ **Debuggable**: Can add LED indicators, serial logging, etc.
-✅ **Flexible**: Full control over timing and protocol implementation
-✅ **Available**: Easy to purchase, well-documented
-
-### Disadvantages
-
-⚠️ **Development Required**: Need to write both Arduino firmware and host software
-⚠️ **USB Latency**: Slightly slower than direct port I/O (typically <1ms)
-⚠️ **Not Plug-and-Play**: Requires custom firmware development
-
 ### Bill of Materials
 
 | Item | Quantity | Estimated Cost |
@@ -1343,48 +1299,6 @@ func main() {
 - Check for inverted signals (nError, nAck, nInitialize, etc.)
 - Use Arduino Serial.print() to debug values
 
-## Testing Without Hardware
-
-For development without physical hardware:
-
-```go
-// Mock parallel port for testing
-type MockParallelPort struct {
-    data    byte
-    status  byte
-    control byte
-}
-
-func NewMockParallelPort() *MockParallelPort {
-    return &MockParallelPort{
-        status: 0xF8, // Default status
-    }
-}
-
-func (m *MockParallelPort) OutByte(offset uint16, value byte) error {
-    switch offset {
-    case DATA_REG:
-        m.data = value
-    case CONTROL_REG:
-        m.control = value
-    }
-    return nil
-}
-
-func (m *MockParallelPort) InByte(offset uint16) (byte, error) {
-    switch offset {
-    case STATUS_REG:
-        return m.status, nil
-    default:
-        return 0, nil
-    }
-}
-
-func (m *MockParallelPort) Close() error {
-    return nil
-}
-```
-
 ## References
 
 - [Snowblind Alliance RIO Utility v1.07](http://slackware.cs.utah.edu/pub/slackware/slackware-8.0/contrib/rio.txt)
@@ -1397,10 +1311,6 @@ func (m *MockParallelPort) Close() error {
 
 This documentation is provided for educational and preservation purposes. The Rio PMP300 protocol is based on reverse-engineered information from open-source implementations.
 
-## Contributing
-
-If you find errors or have improvements, please submit issues or pull requests.
-
 ---
 
-**Note**: Direct hardware access requires elevated privileges and can potentially damage your system if used incorrectly. Always test thoroughly in a safe environment.
+**Note**: Direct hardware access requires elevated privileges. Use caution when working with hardware interfaces.
