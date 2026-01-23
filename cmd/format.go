@@ -89,8 +89,8 @@ func runFormat(cmd *cobra.Command, args []string) error {
 	if err == nil {
 		totalMB := float64(info.TotalBlocks*32) / 1024.0
 		fmt.Printf("Device ready: %.1f MB, %d blocks\n", totalMB, info.TotalBlocks)
-		if info.BadBlocks > 0 {
-			fmt.Printf("Bad blocks found: %d\n", info.BadBlocks)
+		if info.BlocksBad > 0 {
+			fmt.Printf("Bad blocks found: %d\n", info.BlocksBad)
 		}
 	}
 

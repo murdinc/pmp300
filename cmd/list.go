@@ -94,14 +94,14 @@ func runList(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	info, err := pmp.GetDeviceInfo()
 	if err == nil {
-		usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BadBlocks
+		usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BlocksBad
 		usedMB := float64(usedBlocks*32) / 1024.0
 		freeMB := float64(info.FreeBlocks*32) / 1024.0
 		totalMB := float64(info.TotalBlocks*32) / 1024.0
 
 		fmt.Printf("Storage: %.1f MB used / %.1f MB free (%.1f MB total)\n", usedMB, freeMB, totalMB)
-		if info.BadBlocks > 0 {
-			fmt.Printf("Bad blocks: %d\n", info.BadBlocks)
+		if info.BlocksBad > 0 {
+			fmt.Printf("Bad blocks: %d\n", info.BlocksBad)
 		}
 	}
 

@@ -4,19 +4,20 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tarm/serial"
+	"go.bug.st/serial"
 )
 
 // Command bytes - must match Arduino firmware
 const (
-	CMD_WRITE_DATA   = 'W'
-	CMD_WRITE_CTRL   = 'C'
-	CMD_READ_STATUS  = 'R'
-	CMD_DELAY_US     = 'D'
-	CMD_DELAY_MS     = 'M'
-	CMD_PING         = 'P'
-	CMD_VERSION      = 'V'
-	CMD_SET_DATA_DIR = 'S'
+	CMD_PING            = 'P'
+	CMD_VERSION         = 'V'
+	CMD_WRITE_DATA      = 'W'
+	CMD_WRITE_CTRL      = 'C'
+	CMD_READ_STATUS     = 'R'
+	CMD_DELAY_MS        = 'M'
+	CMD_COMMANDOUT      = 'c' // Optimized COMMANDOUT(data, ctrl1, ctrl2)
+	CMD_READ_NIBBLE_BLK = 'n'
+	CMD_WRITE_PMP_CHUNK = 'w' // Write 528 bytes with PMP300 control toggling
 )
 
 // Response bytes
@@ -28,16 +29,9 @@ const (
 	RESP_VERSION = 'I'
 )
 
-// Error codes
-const (
-	ERR_UNKNOWN_CMD   = 0x01
-	ERR_TIMEOUT       = 0x02
-	ERR_INVALID_PARAM = 0x03
-)
-
 // Port represents connection to Arduino USB-Parallel bridge
 type Port struct {
-	serial *serial.Port
+	port   serial.Port
 	device string
 }
 
@@ -54,29 +48,32 @@ func (v Version) String() string {
 
 // Open opens connection to Arduino on specified serial device
 func Open(device string) (*Port, error) {
-	config := &serial.Config{
-		Name:        device,
-		Baud:        115200,
-		ReadTimeout: time.Second * 3,
+	mode := &serial.Mode{
+		BaudRate: 115200,
+		DataBits: 8,
+		Parity:   serial.NoParity,
+		StopBits: serial.OneStopBit,
 	}
 
-	port, err := serial.OpenPort(config)
+	port, err := serial.Open(device, mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open serial port: %w", err)
 	}
 
-	ap := &Port{
-		serial: port,
-		device: device,
+	if err = port.SetReadTimeout(10 * time.Second); err != nil {
+		port.Close()
+		return nil, fmt.Errorf("failed to set read timeout: %w", err)
 	}
 
-	// Wait for Arduino to reset and initialize
+	ap := &Port{port: port, device: device}
+
+	// Wait for Arduino to reset
 	time.Sleep(2 * time.Second)
 
-	// Flush any startup messages
-	port.Flush()
+	// Flush buffers and test connection
+	port.ResetInputBuffer()
+	port.ResetOutputBuffer()
 
-	// Test connection with ping
 	if err := ap.Ping(); err != nil {
 		port.Close()
 		return nil, fmt.Errorf("ping failed: %w", err)
@@ -85,197 +82,170 @@ func Open(device string) (*Port, error) {
 	return ap, nil
 }
 
-// Close closes the serial port connection
+// Close closes the serial port
 func (p *Port) Close() error {
-	if p.serial != nil {
-		return p.serial.Close()
+	if p.port != nil {
+		return p.port.Close()
 	}
-	return nil
-}
-
-// Ping tests connection to Arduino
-func (p *Port) Ping() error {
-	_, err := p.serial.Write([]byte{CMD_PING})
-	if err != nil {
-		return err
-	}
-
-	response := make([]byte, 1)
-	n, err := p.serial.Read(response)
-	if err != nil {
-		return err
-	}
-	if n != 1 || response[0] != RESP_PONG {
-		return fmt.Errorf("ping failed: expected PONG, got 0x%02X", response[0])
-	}
-
-	return nil
-}
-
-// GetVersion returns firmware version
-func (p *Port) GetVersion() (*Version, error) {
-	_, err := p.serial.Write([]byte{CMD_VERSION})
-	if err != nil {
-		return nil, err
-	}
-
-	response := make([]byte, 4)
-	n, err := p.serial.Read(response)
-	if err != nil {
-		return nil, err
-	}
-	if n != 4 || response[0] != RESP_VERSION {
-		return nil, fmt.Errorf("invalid version response")
-	}
-
-	return &Version{
-		Major: response[1],
-		Minor: response[2],
-		Patch: response[3],
-	}, nil
-}
-
-// OutByte writes a byte to the specified parallel port register
-// offset: 0 = Data register, 2 = Control register
-func (p *Port) OutByte(offset uint16, value byte) error {
-	var cmd byte
-	switch offset {
-	case 0: // Data register
-		cmd = CMD_WRITE_DATA
-	case 2: // Control register
-		cmd = CMD_WRITE_CTRL
-	default:
-		return fmt.Errorf("invalid offset: %d (must be 0 or 2)", offset)
-	}
-
-	_, err := p.serial.Write([]byte{cmd, value})
-	if err != nil {
-		return err
-	}
-
-	// Wait for acknowledgment
-	response := make([]byte, 1)
-	n, err := p.serial.Read(response)
-	if err != nil {
-		return err
-	}
-
-	if n != 1 {
-		return fmt.Errorf("no response")
-	}
-
-	if response[0] == RESP_ERROR {
-		// Read error code
-		errCode := make([]byte, 1)
-		p.serial.Read(errCode)
-		return fmt.Errorf("arduino error: 0x%02X", errCode[0])
-	}
-
-	if response[0] != RESP_OK {
-		return fmt.Errorf("expected OK, got 0x%02X", response[0])
-	}
-
-	return nil
-}
-
-// InByte reads a byte from the specified parallel port register
-// offset: 1 = Status register
-func (p *Port) InByte(offset uint16) (byte, error) {
-	if offset != 1 { // Only status register can be read
-		return 0, fmt.Errorf("invalid offset: %d (must be 1 for status)", offset)
-	}
-
-	_, err := p.serial.Write([]byte{CMD_READ_STATUS})
-	if err != nil {
-		return 0, err
-	}
-
-	// Wait for value response
-	response := make([]byte, 2)
-	n, err := p.serial.Read(response)
-	if err != nil {
-		return 0, err
-	}
-
-	if n != 2 || response[0] != RESP_VALUE {
-		return 0, fmt.Errorf("invalid response")
-	}
-
-	return response[1], nil
-}
-
-// DelayMicroseconds delays for specified microseconds (0-65535)
-func (p *Port) DelayMicroseconds(us uint16) error {
-	highByte := byte(us >> 8)
-	lowByte := byte(us & 0xFF)
-
-	_, err := p.serial.Write([]byte{CMD_DELAY_US, highByte, lowByte})
-	if err != nil {
-		return err
-	}
-
-	response := make([]byte, 1)
-	_, err = p.serial.Read(response)
-	if err != nil {
-		return err
-	}
-
-	if response[0] != RESP_OK {
-		return fmt.Errorf("delay failed")
-	}
-
-	return nil
-}
-
-// DelayMilliseconds delays for specified milliseconds (0-65535)
-func (p *Port) DelayMilliseconds(ms uint16) error {
-	highByte := byte(ms >> 8)
-	lowByte := byte(ms & 0xFF)
-
-	_, err := p.serial.Write([]byte{CMD_DELAY_MS, highByte, lowByte})
-	if err != nil {
-		return err
-	}
-
-	response := make([]byte, 1)
-	_, err = p.serial.Read(response)
-	if err != nil {
-		return err
-	}
-
-	if response[0] != RESP_OK {
-		return fmt.Errorf("delay failed")
-	}
-
-	return nil
-}
-
-// SetDataDirection sets data pin direction
-// dir: 'I' for input, 'O' for output
-func (p *Port) SetDataDirection(dir byte) error {
-	if dir != 'I' && dir != 'O' {
-		return fmt.Errorf("invalid direction: must be 'I' or 'O'")
-	}
-
-	_, err := p.serial.Write([]byte{CMD_SET_DATA_DIR, dir})
-	if err != nil {
-		return err
-	}
-
-	response := make([]byte, 1)
-	_, err = p.serial.Read(response)
-	if err != nil {
-		return err
-	}
-
-	if response[0] != RESP_OK {
-		return fmt.Errorf("set direction failed")
-	}
-
 	return nil
 }
 
 // Device returns the serial device path
 func (p *Port) Device() string {
 	return p.device
+}
+
+// Ping tests connection
+func (p *Port) Ping() error {
+	if _, err := p.port.Write([]byte{CMD_PING}); err != nil {
+		return err
+	}
+	resp := make([]byte, 1)
+	if n, err := p.port.Read(resp); err != nil || n != 1 || resp[0] != RESP_PONG {
+		return fmt.Errorf("ping failed")
+	}
+	return nil
+}
+
+// GetVersion returns firmware version
+func (p *Port) GetVersion() (*Version, error) {
+	if _, err := p.port.Write([]byte{CMD_VERSION}); err != nil {
+		return nil, err
+	}
+	resp := make([]byte, 4)
+	if _, err := p.readFull(resp); err != nil {
+		return nil, err
+	}
+	if resp[0] != RESP_VERSION {
+		return nil, fmt.Errorf("invalid version response")
+	}
+	return &Version{Major: resp[1], Minor: resp[2], Patch: resp[3]}, nil
+}
+
+// OutByte writes a byte to data (offset=0) or control (offset=2) register
+func (p *Port) OutByte(offset uint16, value byte) error {
+	var cmd byte
+	if offset == 0 {
+		cmd = CMD_WRITE_DATA
+	} else if offset == 2 {
+		cmd = CMD_WRITE_CTRL
+	} else {
+		return fmt.Errorf("invalid offset: %d", offset)
+	}
+
+	if _, err := p.port.Write([]byte{cmd, value}); err != nil {
+		return err
+	}
+	return p.waitOK()
+}
+
+// InByte reads status register (offset must be 1)
+func (p *Port) InByte(offset uint16) (byte, error) {
+	if offset != 1 {
+		return 0, fmt.Errorf("invalid offset: %d", offset)
+	}
+	if _, err := p.port.Write([]byte{CMD_READ_STATUS}); err != nil {
+		return 0, err
+	}
+	resp := make([]byte, 2)
+	if _, err := p.readFull(resp); err != nil {
+		return 0, err
+	}
+	if resp[0] != RESP_VALUE {
+		return 0, fmt.Errorf("invalid status response")
+	}
+	return resp[1], nil
+}
+
+// DelayMilliseconds delays for specified milliseconds
+func (p *Port) DelayMilliseconds(ms uint16) error {
+	if _, err := p.port.Write([]byte{CMD_DELAY_MS, byte(ms >> 8), byte(ms & 0xFF)}); err != nil {
+		return err
+	}
+	return p.waitOK()
+}
+
+// CommandOut executes COMMANDOUT(data, ctrl1, ctrl2) in one USB round-trip
+// This is the optimized version - replaces 3 round-trips with 1
+func (p *Port) CommandOut(data, ctrl1, ctrl2 byte) error {
+	if _, err := p.port.Write([]byte{CMD_COMMANDOUT, data, ctrl1, ctrl2}); err != nil {
+		return err
+	}
+	return p.waitOK()
+}
+
+// ReadNibbleBlock reads multiple bytes using PMP300 nibble protocol
+func (p *Port) ReadNibbleBlock(count uint16) ([]byte, error) {
+	if _, err := p.port.Write([]byte{CMD_READ_NIBBLE_BLK, byte(count >> 8), byte(count & 0xFF)}); err != nil {
+		return nil, err
+	}
+
+	// Wait for OK
+	if err := p.waitOK(); err != nil {
+		return nil, err
+	}
+
+	// Read data
+	data := make([]byte, count)
+	if _, err := p.readFull(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// WritePMPChunk writes 528 bytes (512 data + 16 end block) with PMP300 control toggling
+// This is highly optimized - sends all data in one USB transfer, Arduino handles control toggling
+func (p *Port) WritePMPChunk(data []byte) error {
+	if len(data) != 528 {
+		return fmt.Errorf("chunk must be exactly 528 bytes, got %d", len(data))
+	}
+
+	// Send command followed by all 528 bytes
+	buf := make([]byte, 1+528)
+	buf[0] = CMD_WRITE_PMP_CHUNK
+	copy(buf[1:], data)
+
+	if _, err := p.port.Write(buf); err != nil {
+		return err
+	}
+	return p.waitOK()
+}
+
+// GetNibbleByte reads one byte using nibble protocol (for single bytes, uses block command)
+func (p *Port) GetNibbleByte() (byte, error) {
+	data, err := p.ReadNibbleBlock(1)
+	if err != nil {
+		return 0, err
+	}
+	return data[0], nil
+}
+
+// Helper: wait for OK response
+func (p *Port) waitOK() error {
+	resp := make([]byte, 1)
+	if _, err := p.readFull(resp); err != nil {
+		return err
+	}
+	if resp[0] == RESP_ERROR {
+		errCode := make([]byte, 1)
+		p.port.Read(errCode)
+		return fmt.Errorf("arduino error: 0x%02X", errCode[0])
+	}
+	if resp[0] != RESP_OK {
+		return fmt.Errorf("expected OK, got 0x%02X", resp[0])
+	}
+	return nil
+}
+
+// Helper: read exactly len(buf) bytes
+func (p *Port) readFull(buf []byte) (int, error) {
+	total := 0
+	for total < len(buf) {
+		n, err := p.port.Read(buf[total:])
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
 }

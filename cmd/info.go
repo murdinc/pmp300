@@ -60,7 +60,7 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	fmt.Println("\n=== PMP300 Device Information ===\n")
 
 	// Storage information
-	usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BadBlocks
+	usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BlocksBad
 	usedMB := float64(usedBlocks*32) / 1024.0
 	freeMB := float64(info.FreeBlocks*32) / 1024.0
 	totalMB := float64(info.TotalBlocks*32) / 1024.0
@@ -77,9 +77,9 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Total:        %.1f MB (%d blocks)\n", totalMB, info.TotalBlocks)
 	fmt.Printf("  Used:         %.1f MB (%d blocks, %.1f%%)\n", usedMB, usedBlocks, usedPercent)
 	fmt.Printf("  Free:         %.1f MB (%d blocks)\n", freeMB, info.FreeBlocks)
-	if info.BadBlocks > 0 {
-		badMB := float64(info.BadBlocks*32) / 1024.0
-		fmt.Printf("  Bad blocks:   %.1f MB (%d blocks)\n", badMB, info.BadBlocks)
+	if info.BlocksBad > 0 {
+		badMB := float64(info.BlocksBad*32) / 1024.0
+		fmt.Printf("  Bad blocks:   %.1f MB (%d blocks)\n", badMB, info.BlocksBad)
 	}
 
 	fmt.Printf("\nFiles:\n")

@@ -1,28 +1,21 @@
 /*
- * PMP300 USB-to-Parallel Bridge
+ * PMP300 USB-to-Parallel Bridge - Optimized Version
  *
  * This Arduino sketch implements a USB-to-5V-parallel-port bridge for interfacing
  * with the Diamond Rio PMP300 MP3 player on modern computers without parallel ports.
  *
- * Hardware: Arduino Mega 2560 or Arduino Uno
+ * Hardware: Arduino Uno (or Mega 2560)
  * Interface: USB Serial at 115200 baud
  *
- * Protocol Documentation:
- * See PROTOCOL.md in this directory for complete command reference.
- *
- * Author: Based on PMP300 protocol reverse engineering
  * License: MIT
  */
 
 // ============================================================================
-// BOARD CONFIGURATION - Automatically detects Arduino Mega vs Uno
+// BOARD CONFIGURATION
 // ============================================================================
 
 #if defined(__AVR_ATmega2560__)
-  // Arduino Mega 2560 Pin Definitions
-  #define BOARD_TYPE "Arduino Mega 2560"
-
-  // Data pins (8 bits, bidirectional)
+  #define BOARD_TYPE "Mega2560"
   #define DATA0_PIN  22
   #define DATA1_PIN  23
   #define DATA2_PIN  24
@@ -31,23 +24,17 @@
   #define DATA5_PIN  27
   #define DATA6_PIN  28
   #define DATA7_PIN  29
-
-  // Control pins (2 bits, output only)
-  #define CTRL_NINIT_PIN      30  // Control bit 2 (nInitialize)
-  #define CTRL_NSELECT_PIN    31  // Control bit 3 (nSelect-In)
-
-  // Status pins (5 bits, input only)
-  #define STATUS_NERROR_PIN   32  // Status bit 3 (nError)
-  #define STATUS_SELECT_PIN   33  // Status bit 4 (Select)
-  #define STATUS_PAPEROUT_PIN 34  // Status bit 5 (Paper-Out)
-  #define STATUS_NACK_PIN     35  // Status bit 6 (nAck)
-  #define STATUS_BUSY_PIN     36  // Status bit 7 (Busy)
-
+  #define CTRL_STROBE_PIN     30
+  #define CTRL_AUTOFEED_PIN   31
+  #define CTRL_NINIT_PIN      32
+  #define CTRL_NSELECT_PIN    33
+  #define STATUS_NERROR_PIN   34
+  #define STATUS_SELECT_PIN   35
+  #define STATUS_PAPEROUT_PIN 36
+  #define STATUS_NACK_PIN     37
+  #define STATUS_BUSY_PIN     38
 #else
-  // Arduino Uno Pin Definitions
-  #define BOARD_TYPE "Arduino Uno"
-
-  // Data pins (8 bits, bidirectional)
+  #define BOARD_TYPE "Uno"
   #define DATA0_PIN  2
   #define DATA1_PIN  3
   #define DATA2_PIN  4
@@ -56,17 +43,15 @@
   #define DATA5_PIN  7
   #define DATA6_PIN  8
   #define DATA7_PIN  9
-
-  // Control pins (2 bits, output only)
-  #define CTRL_NINIT_PIN      10  // Control bit 2 (nInitialize)
-  #define CTRL_NSELECT_PIN    11  // Control bit 3 (nSelect-In)
-
-  // Status pins (5 bits, input only)
-  #define STATUS_NERROR_PIN   12  // Status bit 3 (nError)
-  #define STATUS_SELECT_PIN   13  // Status bit 4 (Select)
-  #define STATUS_PAPEROUT_PIN A0  // Status bit 5 (Paper-Out)
-  #define STATUS_NACK_PIN     A1  // Status bit 6 (nAck)
-  #define STATUS_BUSY_PIN     A2  // Status bit 7 (Busy)
+  #define CTRL_STROBE_PIN     A3
+  #define CTRL_AUTOFEED_PIN   A4
+  #define CTRL_NINIT_PIN      10
+  #define CTRL_NSELECT_PIN    11
+  #define STATUS_NERROR_PIN   12
+  #define STATUS_SELECT_PIN   13
+  #define STATUS_PAPEROUT_PIN A0
+  #define STATUS_NACK_PIN     A1
+  #define STATUS_BUSY_PIN     A2
 #endif
 
 // ============================================================================
@@ -75,35 +60,35 @@
 
 #define SERIAL_BAUD_RATE 115200
 
-// Command bytes (Host -> Arduino)
-#define CMD_WRITE_DATA    'W'  // Write byte to data register
-#define CMD_WRITE_CTRL    'C'  // Write byte to control register
-#define CMD_READ_STATUS   'R'  // Read byte from status register
-#define CMD_DELAY_US      'D'  // Delay microseconds
-#define CMD_DELAY_MS      'M'  // Delay milliseconds
-#define CMD_PING          'P'  // Ping (connection test)
-#define CMD_VERSION       'V'  // Get version info
-#define CMD_SET_DATA_DIR  'S'  // Set data pin direction (I=input, O=output)
+// Commands (Host -> Arduino)
+#define CMD_PING             'P'  // Connection test
+#define CMD_VERSION          'V'  // Get version
+#define CMD_WRITE_DATA       'W'  // Write to data register
+#define CMD_WRITE_CTRL       'C'  // Write to control register
+#define CMD_READ_STATUS      'R'  // Read status register
+#define CMD_DELAY_MS         'M'  // Delay milliseconds
+#define CMD_COMMANDOUT       'c'  // COMMANDOUT(data, ctrl1, ctrl2) - optimized
+#define CMD_READ_NIBBLE_BLK  'n'  // Read bytes using nibble protocol
+#define CMD_WRITE_PMP_CHUNK  'w'  // Write 528 bytes with PMP300 control toggling
 
-// Response bytes (Arduino -> Host)
-#define RESP_OK           'K'  // Command acknowledged/success
-#define RESP_VALUE        'V'  // Value follows (1 byte)
-#define RESP_ERROR        'E'  // Error code follows (1 byte)
-#define RESP_PONG         'P'  // Pong response
-#define RESP_VERSION      'I'  // Version info follows
+// Responses (Arduino -> Host)
+#define RESP_OK      'K'
+#define RESP_VALUE   'V'
+#define RESP_ERROR   'E'
+#define RESP_PONG    'P'
+#define RESP_VERSION 'I'
 
 // Error codes
-#define ERR_UNKNOWN_CMD   0x01  // Unknown command received
-#define ERR_TIMEOUT       0x02  // Timeout waiting for data
-#define ERR_INVALID_PARAM 0x03  // Invalid parameter
+#define ERR_UNKNOWN_CMD   0x01
+#define ERR_TIMEOUT       0x02
 
 // Firmware version
-#define FW_VERSION_MAJOR  1
+#define FW_VERSION_MAJOR  2
 #define FW_VERSION_MINOR  0
-#define FW_VERSION_PATCH  0
+#define FW_VERSION_PATCH  1
 
 // ============================================================================
-// PIN ARRAYS FOR EFFICIENT PROCESSING
+// PIN ARRAYS
 // ============================================================================
 
 const uint8_t dataPins[8] = {
@@ -111,106 +96,68 @@ const uint8_t dataPins[8] = {
   DATA4_PIN, DATA5_PIN, DATA6_PIN, DATA7_PIN
 };
 
-const uint8_t statusPins[5] = {
-  STATUS_NERROR_PIN,   // Bit 3
-  STATUS_SELECT_PIN,   // Bit 4
-  STATUS_PAPEROUT_PIN, // Bit 5
-  STATUS_NACK_PIN,     // Bit 6
-  STATUS_BUSY_PIN      // Bit 7
-};
-
 // ============================================================================
 // GLOBAL STATE
 // ============================================================================
 
-bool dataDirection = OUTPUT; // Current direction of data pins (INPUT or OUTPUT)
+bool dataIsOutput = true;
 
 // ============================================================================
-// SETUP - Initialize hardware and serial communication
+// SETUP
 // ============================================================================
 
 void setup() {
-  // Initialize USB serial
   Serial.begin(SERIAL_BAUD_RATE);
+  while (!Serial && millis() < 3000);
 
-  // Wait for serial port to connect (important for Leonardo/Micro)
-  while (!Serial && millis() < 3000) {
-    ; // Wait up to 3 seconds
-  }
+  // Data pins as outputs
+  setDataOutput();
 
-  // Initialize data pins as outputs initially
-  setDataDirection(OUTPUT);
-
-  // Initialize control pins as outputs, set to idle state
+  // Control pins as outputs, idle state (0x04)
+  pinMode(CTRL_STROBE_PIN, OUTPUT);
+  pinMode(CTRL_AUTOFEED_PIN, OUTPUT);
   pinMode(CTRL_NINIT_PIN, OUTPUT);
   pinMode(CTRL_NSELECT_PIN, OUTPUT);
-  digitalWrite(CTRL_NINIT_PIN, LOW);
-  digitalWrite(CTRL_NSELECT_PIN, LOW);
+  writeControl(0x04);
 
-  // Initialize status pins as inputs
+  // Status pins as inputs
   pinMode(STATUS_NERROR_PIN, INPUT);
   pinMode(STATUS_SELECT_PIN, INPUT);
   pinMode(STATUS_PAPEROUT_PIN, INPUT);
   pinMode(STATUS_NACK_PIN, INPUT);
   pinMode(STATUS_BUSY_PIN, INPUT);
 
-  // Send startup message
-  delay(100); // Let serial stabilize
-  Serial.print("PMP300 USB-Parallel Bridge v");
+  delay(100);
+  Serial.print(F("PMP300 Bridge v"));
   Serial.print(FW_VERSION_MAJOR);
-  Serial.print(".");
+  Serial.print('.');
   Serial.print(FW_VERSION_MINOR);
-  Serial.print(".");
-  Serial.println(FW_VERSION_PATCH);
-  Serial.print("Board: ");
-  Serial.println(BOARD_TYPE);
-  Serial.println("Ready.");
+  Serial.print('.');
+  Serial.print(FW_VERSION_PATCH);
+  Serial.print(F(" ("));
+  Serial.print(F(BOARD_TYPE));
+  Serial.println(F(") Ready"));
 }
 
 // ============================================================================
-// MAIN LOOP - Process incoming commands
+// MAIN LOOP
 // ============================================================================
 
 void loop() {
-  if (Serial.available() > 0) {
+  if (Serial.available()) {
     uint8_t cmd = Serial.read();
 
     switch(cmd) {
-      case CMD_WRITE_DATA:
-        handleWriteData();
-        break;
-
-      case CMD_WRITE_CTRL:
-        handleWriteControl();
-        break;
-
-      case CMD_READ_STATUS:
-        handleReadStatus();
-        break;
-
-      case CMD_DELAY_US:
-        handleDelayMicroseconds();
-        break;
-
-      case CMD_DELAY_MS:
-        handleDelayMilliseconds();
-        break;
-
-      case CMD_PING:
-        handlePing();
-        break;
-
-      case CMD_VERSION:
-        handleVersion();
-        break;
-
-      case CMD_SET_DATA_DIR:
-        handleSetDataDirection();
-        break;
-
-      default:
-        sendError(ERR_UNKNOWN_CMD);
-        break;
+      case CMD_PING:           handlePing(); break;
+      case CMD_VERSION:        handleVersion(); break;
+      case CMD_WRITE_DATA:     handleWriteData(); break;
+      case CMD_WRITE_CTRL:     handleWriteControl(); break;
+      case CMD_READ_STATUS:    handleReadStatus(); break;
+      case CMD_DELAY_MS:       handleDelayMs(); break;
+      case CMD_COMMANDOUT:     handleCommandOut(); break;
+      case CMD_READ_NIBBLE_BLK: handleReadNibbleBlock(); break;
+      case CMD_WRITE_PMP_CHUNK: handleWritePMPChunk(); break;
+      default:                 sendError(ERR_UNKNOWN_CMD); break;
     }
   }
 }
@@ -219,138 +166,10 @@ void loop() {
 // COMMAND HANDLERS
 // ============================================================================
 
-/*
- * CMD_WRITE_DATA ('W')
- * Write a byte to the data register (8 data pins)
- *
- * Protocol: 'W' <byte>
- * Response: 'K'
- *
- * Automatically sets data pins to OUTPUT mode if needed.
- */
-void handleWriteData() {
-  uint8_t value = waitForByte();
-
-  // Ensure data pins are outputs
-  if (dataDirection != OUTPUT) {
-    setDataDirection(OUTPUT);
-  }
-
-  // Write each bit to corresponding pin
-  for (uint8_t i = 0; i < 8; i++) {
-    digitalWrite(dataPins[i], (value >> i) & 0x01);
-  }
-
-  sendOK();
-}
-
-/*
- * CMD_WRITE_CTRL ('C')
- * Write to control register (bits 2 and 3 only)
- *
- * Protocol: 'C' <byte>
- * Response: 'K'
- *
- * Note: Only bits 2 (nInitialize) and 3 (nSelect-In) are used by PMP300 protocol
- */
-void handleWriteControl() {
-  uint8_t value = waitForByte();
-
-  // Extract and write control bits
-  // Bit 2: nInitialize
-  digitalWrite(CTRL_NINIT_PIN, (value >> 2) & 0x01);
-
-  // Bit 3: nSelect-In
-  digitalWrite(CTRL_NSELECT_PIN, (value >> 3) & 0x01);
-
-  sendOK();
-}
-
-/*
- * CMD_READ_STATUS ('R')
- * Read byte from status register (bits 3-7)
- *
- * Protocol: 'R'
- * Response: 'V' <byte>
- *
- * Returns a byte with status bits in positions 3-7:
- *   Bit 3: nError
- *   Bit 4: Select
- *   Bit 5: Paper-Out
- *   Bit 6: nAck
- *   Bit 7: Busy
- * Bits 0-2 are always 0.
- */
-void handleReadStatus() {
-  uint8_t result = 0;
-
-  // Read status pins and construct byte
-  // Note: Status bits start at bit position 3
-  if (digitalRead(STATUS_NERROR_PIN))   result |= 0x08; // Bit 3
-  if (digitalRead(STATUS_SELECT_PIN))   result |= 0x10; // Bit 4
-  if (digitalRead(STATUS_PAPEROUT_PIN)) result |= 0x20; // Bit 5
-  if (digitalRead(STATUS_NACK_PIN))     result |= 0x40; // Bit 6
-  if (digitalRead(STATUS_BUSY_PIN))     result |= 0x80; // Bit 7
-
-  sendValue(result);
-}
-
-/*
- * CMD_DELAY_US ('D')
- * Delay for specified microseconds (16-bit value)
- *
- * Protocol: 'D' <high_byte> <low_byte>
- * Response: 'K'
- *
- * Max delay: 65535 microseconds (~65ms)
- */
-void handleDelayMicroseconds() {
-  uint8_t highByte = waitForByte();
-  uint8_t lowByte = waitForByte();
-  uint16_t microseconds = (highByte << 8) | lowByte;
-
-  delayMicroseconds(microseconds);
-
-  sendOK();
-}
-
-/*
- * CMD_DELAY_MS ('M')
- * Delay for specified milliseconds (16-bit value)
- *
- * Protocol: 'M' <high_byte> <low_byte>
- * Response: 'K'
- *
- * Max delay: 65535 milliseconds (~65 seconds)
- */
-void handleDelayMilliseconds() {
-  uint8_t highByte = waitForByte();
-  uint8_t lowByte = waitForByte();
-  uint16_t milliseconds = (highByte << 8) | lowByte;
-
-  delay(milliseconds);
-
-  sendOK();
-}
-
-/*
- * CMD_PING ('P')
- * Connection test - responds immediately
- *
- * Protocol: 'P'
- * Response: 'P'
- */
 void handlePing() {
   Serial.write(RESP_PONG);
 }
 
-/*
- * CMD_VERSION ('V')
- * Get firmware version information
- *
- * Protocol: 'V'
- * Response: 'I' <major> <minor> <patch>
- */
 void handleVersion() {
   Serial.write(RESP_VERSION);
   Serial.write(FW_VERSION_MAJOR);
@@ -358,86 +177,182 @@ void handleVersion() {
   Serial.write(FW_VERSION_PATCH);
 }
 
-/*
- * CMD_SET_DATA_DIR ('S')
- * Set data pin direction (for reading data back from device)
- *
- * Protocol: 'S' <direction>
- *   direction: 'I' = INPUT, 'O' = OUTPUT
- * Response: 'K'
- *
- * This is needed because the data pins are bidirectional in the parallel port.
- * Normally they're outputs (sending data to PMP300), but when reading data
- * back they need to be inputs.
- */
-void handleSetDataDirection() {
-  uint8_t dir = waitForByte();
+// Write byte to data register
+// Protocol: 'W' <byte> -> 'K'
+void handleWriteData() {
+  uint8_t value = waitForByte();
+  if (!dataIsOutput) setDataOutput();
+  writeDataByte(value);
+  Serial.write(RESP_OK);
+}
 
-  if (dir == 'I') {
-    setDataDirection(INPUT);
-    sendOK();
-  } else if (dir == 'O') {
-    setDataDirection(OUTPUT);
-    sendOK();
-  } else {
-    sendError(ERR_INVALID_PARAM);
+// Write byte to control register
+// Protocol: 'C' <byte> -> 'K'
+void handleWriteControl() {
+  uint8_t value = waitForByte();
+  writeControl(value);
+  Serial.write(RESP_OK);
+}
+
+// Read status register
+// Protocol: 'R' -> 'V' <byte>
+void handleReadStatus() {
+  Serial.write(RESP_VALUE);
+  Serial.write(readStatusByte());
+}
+
+// Delay milliseconds
+// Protocol: 'M' <high> <low> -> 'K'
+void handleDelayMs() {
+  uint16_t ms = (waitForByte() << 8) | waitForByte();
+  delay(ms);
+  Serial.write(RESP_OK);
+}
+
+// Optimized COMMANDOUT - executes data, ctrl1, ctrl2 in one call
+// Protocol: 'c' <data> <ctrl1> <ctrl2> -> 'K'
+// This replaces 3 USB round-trips with 1
+void handleCommandOut() {
+  uint8_t data = waitForByte();
+  uint8_t ctrl1 = waitForByte();
+  uint8_t ctrl2 = waitForByte();
+
+  if (!dataIsOutput) setDataOutput();
+
+  writeDataByte(data);
+  writeControl(ctrl1);
+  writeControl(ctrl2);
+
+  Serial.write(RESP_OK);
+}
+
+// Read multiple bytes using PMP300 nibble protocol
+// Protocol: 'n' <count_high> <count_low> -> 'K' <data...>
+void handleReadNibbleBlock() {
+  uint16_t count = (waitForByte() << 8) | waitForByte();
+
+  writeControl(0x04);  // Initial state
+  Serial.write(RESP_OK);
+
+  for (uint16_t i = 0; i < count; i++) {
+    Serial.write(readNibbleByte());
   }
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
+// Write 528 bytes (512 data + 16 end block) with PMP300 control toggling
+// Protocol: 'w' <528 bytes> -> 'K'
+// Control alternates: even bytes ctrl=0x00, odd bytes ctrl=0x04
+void handleWritePMPChunk() {
+  if (!dataIsOutput) setDataOutput();
 
-/*
- * Set direction of all data pins
- */
-void setDataDirection(uint8_t dir) {
-  for (uint8_t i = 0; i < 8; i++) {
-    pinMode(dataPins[i], dir);
-    if (dir == OUTPUT) {
-      digitalWrite(dataPins[i], LOW); // Initialize to low
+  // Read and write 528 bytes with control toggling
+  for (uint16_t i = 0; i < 528; i++) {
+    uint8_t value = waitForByte();
+    writeDataByte(value);
+
+    // Alternate control: 0x00 for even, 0x04 for odd
+    if ((i & 1) == 0) {
+      writeControl(0x00);
+    } else {
+      writeControl(0x04);
     }
   }
-  dataDirection = dir;
+
+  Serial.write(RESP_OK);
 }
 
-/*
- * Wait for a byte to arrive on serial with timeout
- * Returns the byte, or 0 on timeout (with error sent)
- */
-uint8_t waitForByte() {
-  unsigned long startTime = millis();
-  const unsigned long timeout = 1000; // 1 second timeout
+// ============================================================================
+// LOW-LEVEL HELPERS
+// ============================================================================
 
+// Write byte to data pins (fast, no function call overhead)
+inline void writeDataByte(uint8_t value) {
+  digitalWrite(DATA0_PIN, (value >> 0) & 1);
+  digitalWrite(DATA1_PIN, (value >> 1) & 1);
+  digitalWrite(DATA2_PIN, (value >> 2) & 1);
+  digitalWrite(DATA3_PIN, (value >> 3) & 1);
+  digitalWrite(DATA4_PIN, (value >> 4) & 1);
+  digitalWrite(DATA5_PIN, (value >> 5) & 1);
+  digitalWrite(DATA6_PIN, (value >> 6) & 1);
+  digitalWrite(DATA7_PIN, (value >> 7) & 1);
+}
+
+// Write control register (matches PC parallel port hardware inversion)
+inline void writeControl(uint8_t value) {
+  digitalWrite(CTRL_STROBE_PIN, ((value >> 0) & 1) ? LOW : HIGH);   // Inverted
+  digitalWrite(CTRL_AUTOFEED_PIN, ((value >> 1) & 1) ? LOW : HIGH); // Inverted
+  digitalWrite(CTRL_NINIT_PIN, ((value >> 2) & 1) ? HIGH : LOW);    // NOT inverted
+  digitalWrite(CTRL_NSELECT_PIN, ((value >> 3) & 1) ? LOW : HIGH);  // Inverted
+}
+
+// Read status register
+inline uint8_t readStatusByte() {
+  uint8_t status = 0;
+  if (digitalRead(STATUS_NERROR_PIN))   status |= 0x08;
+  if (digitalRead(STATUS_SELECT_PIN))   status |= 0x10;
+  if (digitalRead(STATUS_PAPEROUT_PIN)) status |= 0x20;
+  if (digitalRead(STATUS_NACK_PIN))     status |= 0x40;
+  if (digitalRead(STATUS_BUSY_PIN))     status |= 0x80;
+  return status;
+}
+
+// Read one byte using PMP300 nibble protocol
+// NOTE: PC parallel port hardware inverts the Busy line (bit 7), so C++ code
+// XORs with 0x80 to compensate. Arduino reads raw signals with NO hardware
+// inversion, so we must NOT XOR with 0x80 here!
+uint8_t readNibbleByte() {
+  uint8_t result, status;
+
+  // High nibble: control = 0x00
+  writeControl(0x00);
+  delayMicroseconds(2);
+  status = readStatusByte();
+  result = (status & 0xF0) >> 4;  // No XOR 0x80 - Arduino has no Busy inversion
+
+  // Low nibble: control = 0x04
+  writeControl(0x04);
+  delayMicroseconds(2);
+  status = readStatusByte();
+  result |= (status & 0xF0);  // No XOR 0x80
+
+  // Reverse bits
+  result = (result & 0xF0) >> 4 | (result & 0x0F) << 4;
+  result = (result & 0xCC) >> 2 | (result & 0x33) << 2;
+  result = (result & 0xAA) >> 1 | (result & 0x55) << 1;
+
+  return result;
+}
+
+// Set data pins as outputs
+void setDataOutput() {
+  for (uint8_t i = 0; i < 8; i++) {
+    pinMode(dataPins[i], OUTPUT);
+    digitalWrite(dataPins[i], LOW);
+  }
+  dataIsOutput = true;
+}
+
+// Set data pins as inputs
+void setDataInput() {
+  for (uint8_t i = 0; i < 8; i++) {
+    pinMode(dataPins[i], INPUT);
+  }
+  dataIsOutput = false;
+}
+
+// Wait for serial byte with timeout
+uint8_t waitForByte() {
+  unsigned long start = millis();
   while (!Serial.available()) {
-    if (millis() - startTime > timeout) {
+    if (millis() - start > 1000) {
       sendError(ERR_TIMEOUT);
       return 0;
     }
   }
-
   return Serial.read();
 }
 
-/*
- * Send OK response
- */
-void sendOK() {
-  Serial.write(RESP_OK);
-}
-
-/*
- * Send value response
- */
-void sendValue(uint8_t value) {
-  Serial.write(RESP_VALUE);
-  Serial.write(value);
-}
-
-/*
- * Send error response
- */
-void sendError(uint8_t errorCode) {
+void sendError(uint8_t code) {
   Serial.write(RESP_ERROR);
-  Serial.write(errorCode);
+  Serial.write(code);
 }

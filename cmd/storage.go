@@ -80,7 +80,7 @@ func runStorageList(cmd *cobra.Command, args []string) error {
 	internalInfo, internalErr := pmp.GetDeviceInfo()
 	if internalErr == nil {
 		totalMB := float64(internalInfo.TotalBlocks*32) / 1024.0
-		usedBlocks := internalInfo.TotalBlocks - internalInfo.FreeBlocks - internalInfo.BadBlocks
+		usedBlocks := internalInfo.TotalBlocks - internalInfo.FreeBlocks - internalInfo.BlocksBad
 		usedMB := float64(usedBlocks*32) / 1024.0
 		fmt.Printf("  ✓ Internal Flash: %.1f MB (%.1f MB used, %d files)\n", totalMB, usedMB, internalInfo.EntryCount)
 	} else {
@@ -96,7 +96,7 @@ func runStorageList(cmd *cobra.Command, args []string) error {
 		externalInfo, externalErr := pmp.GetDeviceInfo()
 		if externalErr == nil {
 			totalMB := float64(externalInfo.TotalBlocks*32) / 1024.0
-			usedBlocks := externalInfo.TotalBlocks - externalInfo.FreeBlocks - externalInfo.BadBlocks
+			usedBlocks := externalInfo.TotalBlocks - externalInfo.FreeBlocks - externalInfo.BlocksBad
 			usedMB := float64(usedBlocks*32) / 1024.0
 			fmt.Printf("  ✓ External SmartMedia: %.1f MB (%.1f MB used, %d files)\n", totalMB, usedMB, externalInfo.EntryCount)
 		} else {
@@ -161,7 +161,7 @@ func runStorageSwitch(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Switched to %s\n\n", storage)
 
 	totalMB := float64(info.TotalBlocks*32) / 1024.0
-	usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BadBlocks
+	usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BlocksBad
 	usedMB := float64(usedBlocks*32) / 1024.0
 
 	fmt.Printf("Storage info:\n")
