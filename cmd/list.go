@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/murdinc/pmp300/pkg/arduino"
 	"github.com/murdinc/pmp300/pkg/pmp300"
@@ -65,28 +66,24 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if verboseFlag {
 		// Verbose output
-		fmt.Println("  # | Name                          | Size      | Blocks  | Position | Timestamp")
-		fmt.Println("----+-------------------------------+-----------+---------+----------+-------------------")
+		fmt.Println("  # | Name                          | Size      | Bitrate | Blocks  | Position | Timestamp")
+		fmt.Println("----+-------------------------------+-----------+---------+---------+----------+-------------------")
 		for i, file := range files {
-			timestamp := file.Timestamp.Format("2006-01-02 15:04:05")
-			if file.Timestamp.IsZero() {
-				timestamp = "Unknown"
-			}
-			fmt.Printf("%3d | %-29s | %9d | %7d | %8d | %s\n",
-				i+1, truncate(file.Name, 29), file.Size, file.BlockCount, file.BlockPosition, timestamp)
+			timestamp := formatTimestamp(file.Timestamp)
+			bitrate := formatBitrate(file.Bitrate)
+			fmt.Printf("%3d | %-29s | %9d | %7s | %7d | %8d | %s\n",
+				i+1, truncate(file.Name, 29), file.Size, bitrate, file.BlockCount, file.BlockPosition, timestamp)
 		}
 	} else {
 		// Simple output
-		fmt.Println("  # | Name                          | Size      | Timestamp")
-		fmt.Println("----+-------------------------------+-----------+-------------------")
+		fmt.Println("  # | Name                          | Size      | Bitrate | Timestamp")
+		fmt.Println("----+-------------------------------+-----------+---------+-------------------")
 		for i, file := range files {
-			timestamp := file.Timestamp.Format("2006-01-02 15:04:05")
-			if file.Timestamp.IsZero() {
-				timestamp = "Unknown"
-			}
+			timestamp := formatTimestamp(file.Timestamp)
 			sizeMB := float64(file.Size) / 1024.0 / 1024.0
-			fmt.Printf("%3d | %-29s | %7.2f MB | %s\n",
-				i+1, truncate(file.Name, 29), sizeMB, timestamp)
+			bitrate := formatBitrate(file.Bitrate)
+			fmt.Printf("%3d | %-29s | %7.2f MB | %7s | %s\n",
+				i+1, truncate(file.Name, 29), sizeMB, bitrate, timestamp)
 		}
 	}
 
@@ -94,10 +91,10 @@ func runList(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	info, err := pmp.GetDeviceInfo()
 	if err == nil {
-		usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BlocksBad
-		usedMB := float64(usedBlocks*32) / 1024.0
-		freeMB := float64(info.FreeBlocks*32) / 1024.0
-		totalMB := float64(info.TotalBlocks*32) / 1024.0
+		// C++ fields: BlocksAvailable=total, BlocksRemaining=free, BlocksUsed=used, BlocksBad=bad
+		usedMB := float64(info.BlocksUsed) * 32.0 / 1024.0
+		freeMB := float64(info.BlocksRemaining) * 32.0 / 1024.0
+		totalMB := float64(info.BlocksAvailable) * 32.0 / 1024.0
 
 		fmt.Printf("Storage: %.1f MB used / %.1f MB free (%.1f MB total)\n", usedMB, freeMB, totalMB)
 		if info.BlocksBad > 0 {
@@ -113,4 +110,19 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func formatTimestamp(t time.Time) string {
+	// PMP300 came out in 1998, so timestamps before 1990 are invalid
+	if t.Year() < 1990 {
+		return "Unknown"
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
+func formatBitrate(kbps uint16) string {
+	if kbps == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%dk", kbps)
 }

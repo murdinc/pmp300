@@ -59,12 +59,11 @@ func runInfo(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("\n=== PMP300 Device Information ===\n")
 
-	// Storage information
-	usedBlocks := info.TotalBlocks - info.FreeBlocks - info.BlocksBad
-	usedMB := float64(usedBlocks*32) / 1024.0
-	freeMB := float64(info.FreeBlocks*32) / 1024.0
-	totalMB := float64(info.TotalBlocks*32) / 1024.0
-	usedPercent := (float64(usedBlocks) / float64(info.TotalBlocks)) * 100
+	// Storage information - C++ fields: BlocksAvailable=total, BlocksRemaining=free, BlocksUsed=used
+	usedMB := float64(info.BlocksUsed) * 32.0 / 1024.0
+	freeMB := float64(info.BlocksRemaining) * 32.0 / 1024.0
+	totalMB := float64(info.BlocksAvailable) * 32.0 / 1024.0
+	usedPercent := (float64(info.BlocksUsed) / float64(info.BlocksAvailable)) * 100
 
 	fmt.Printf("Model:          Diamond Rio PMP300\n")
 	if totalMB > 40 {
@@ -74,9 +73,9 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nStorage:\n")
-	fmt.Printf("  Total:        %.1f MB (%d blocks)\n", totalMB, info.TotalBlocks)
-	fmt.Printf("  Used:         %.1f MB (%d blocks, %.1f%%)\n", usedMB, usedBlocks, usedPercent)
-	fmt.Printf("  Free:         %.1f MB (%d blocks)\n", freeMB, info.FreeBlocks)
+	fmt.Printf("  Total:        %.1f MB (%d blocks)\n", totalMB, info.BlocksAvailable)
+	fmt.Printf("  Used:         %.1f MB (%d blocks, %.1f%%)\n", usedMB, info.BlocksUsed, usedPercent)
+	fmt.Printf("  Free:         %.1f MB (%d blocks)\n", freeMB, info.BlocksRemaining)
 	if info.BlocksBad > 0 {
 		badMB := float64(info.BlocksBad*32) / 1024.0
 		fmt.Printf("  Bad blocks:   %.1f MB (%d blocks)\n", badMB, info.BlocksBad)
