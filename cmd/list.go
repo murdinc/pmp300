@@ -10,7 +10,9 @@ import (
 )
 
 var (
-	verboseFlag bool
+	verboseFlag      bool
+	tagsFlag         bool
+	listExternalFlag bool
 )
 
 var listCmd = &cobra.Command{
@@ -19,7 +21,9 @@ var listCmd = &cobra.Command{
 	Long: `List all files currently stored on the PMP300 device.
 
 Shows filename, size, and timestamp for each file.
-Use --verbose for additional details including block positions.`,
+Use --verbose for additional details including block positions.
+Use --tags to read and display ID3v1 tags (artist, title, album) - this is slower.
+Use --external to list files on external SmartMedia card.`,
 	Aliases: []string{"ls"},
 	RunE:    runList,
 }
@@ -27,6 +31,8 @@ Use --verbose for additional details including block positions.`,
 func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed information")
+	listCmd.Flags().BoolVarP(&tagsFlag, "tags", "t", false, "Read and display ID3v1 tags (slower)")
+	listCmd.Flags().BoolVarP(&listExternalFlag, "external", "e", false, "List files on external SmartMedia card")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -50,6 +56,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
+	// Switch to external storage if requested
+	if listExternalFlag {
+		pmp.SwitchStorage(pmp300.StorageExternal)
+	}
+
 	fmt.Printf("Reading file list from %s...\n", pmp.GetCurrentStorage())
 	files, err := pmp.ListFiles()
 	if err != nil {
@@ -58,13 +69,47 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(files) == 0 {
 		fmt.Printf("No files on %s.\n", pmp.GetCurrentStorage())
-		fmt.Println("\nTip: Use 'pmp300 storage list' to check external SmartMedia card")
+		if !listExternalFlag {
+			fmt.Println("\nTip: Use 'pmp300 list --external' to list files on external SmartMedia card")
+		}
 		return nil
+	}
+
+	// Read ID3 tags if requested
+	if tagsFlag {
+		fmt.Println("Reading ID3 tags...")
+		for i := range files {
+			if err := pmp.ReadFileID3Tags(&files[i]); err != nil {
+				fmt.Printf("  Warning: Could not read tags for %s: %v\n", files[i].Name, err)
+			}
+		}
 	}
 
 	fmt.Printf("\nFound %d file(s) on %s:\n\n", len(files), pmp.GetCurrentStorage())
 
-	if verboseFlag {
+	if tagsFlag {
+		// Tags output - show artist, title, album, filename
+		fmt.Println("  # | Artist                       | Title                        | Album                        | Filename                     | Size      | Bitrate")
+		fmt.Println("----+------------------------------+------------------------------+------------------------------+------------------------------+-----------+--------")
+		for i, file := range files {
+			artist := file.Artist
+			if artist == "" {
+				artist = "-"
+			}
+			title := file.Title
+			if title == "" {
+				title = "-"
+			}
+			album := file.Album
+			if album == "" {
+				album = "-"
+			}
+			sizeMB := float64(file.Size) / 1024.0 / 1024.0
+			bitrate := formatBitrate(file.Bitrate)
+			fmt.Printf("%3d | %-28s | %-28s | %-28s | %-28s | %7.2f MB | %6s\n",
+				i+1, truncate(artist, 28), truncate(title, 28), truncate(album, 28), truncate(file.Name, 28), sizeMB, bitrate)
+		}
+	} else if verboseFlag {
 		// Verbose output
 		fmt.Println("  # | Name                          | Size      | Bitrate | Blocks  | Position | Timestamp")
 		fmt.Println("----+-------------------------------+-----------+---------+---------+----------+-------------------")

@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/murdinc/pmp300/pkg/arduino"
+	"github.com/murdinc/pmp300/pkg/pmp300"
 	"github.com/spf13/cobra"
 )
 
 var (
-	deviceFlag string
+	deviceFlag   string
+	externalFlag bool
 )
 
 var rootCmd = &cobra.Command{
@@ -32,6 +35,59 @@ func Execute() {
 func init() {
 	// Global flag for serial device
 	rootCmd.PersistentFlags().StringVarP(&deviceFlag, "device", "d", "", "Serial device (e.g., /dev/cu.usbmodem14201)")
+	rootCmd.PersistentFlags().BoolVar(&externalFlag, "external", false, "Use external storage for operations")
+}
+
+// getInitializedPMPDevice returns an initialized PMP300 device with storage set and the opened Arduino port
+func getInitializedPMPDevice() (*pmp300.Device, *arduino.Port, error) {
+	devPath, err := getDevice()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fmt.Printf("Connecting to %s...\n", devPath)
+
+	port, err := arduino.Open(devPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open Arduino: %w", err)
+	}
+
+	pmp := pmp300.New(port)
+
+	if externalFlag {
+		fmt.Println("Switching to external storage...")
+		if err := pmp.SwitchStorage(pmp300.StorageExternal); err != nil {
+			port.Close()
+			return nil, nil, fmt.Errorf("failed to switch to external storage: %w", err)
+		}
+		// Call CheckPresent here to populate d.externalBlockCount
+		_, _, err := pmp.CheckPresent()
+		if err != nil {
+			port.Close()
+			return nil, nil, fmt.Errorf("failed to detect device after switching to external storage: %w", err)
+		}
+	} else {
+		// Default to internal storage (even if not explicitly set, ensure consistency)
+		fmt.Println("Switching to internal storage...")
+		if err := pmp.SwitchStorage(pmp300.StorageInternal); err != nil {
+			port.Close()
+			return nil, nil, fmt.Errorf("failed to switch to internal storage: %w", err)
+		}
+		// For internal, also call CheckPresent to set d.specialEdition if applicable
+		_, _, err := pmp.CheckPresent()
+		if err != nil {
+			port.Close()
+			return nil, nil, fmt.Errorf("failed to detect device after switching to internal storage: %w", err)
+		}
+	}
+
+	fmt.Println("Initializing PMP300...")
+	if err := pmp.Initialize(); err != nil {
+		port.Close() // Close port on initialization failure
+		return nil, nil, fmt.Errorf("initialization failed: %w", err)
+	}
+
+	return pmp, port, nil
 }
 
 // getDevice returns the device path, checking environment variable if not set

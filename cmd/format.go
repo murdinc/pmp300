@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/murdinc/pmp300/pkg/arduino"
-	"github.com/murdinc/pmp300/pkg/pmp300"
 	"github.com/spf13/cobra"
 )
 
@@ -22,11 +20,14 @@ var formatCmd = &cobra.Command{
 
 WARNING: This will DELETE ALL FILES on the device!
 
+By default, this formats the internal flash. Use --external to format an external SmartMedia card.
+
 Use --check-bad-blocks to perform bad block detection during format.
 This is recommended for new or problematic devices, but takes a very long time.
 
 Examples:
   pmp300 format
+  pmp300 format --external
   pmp300 format --check-bad-blocks`,
 	RunE: runFormat,
 }
@@ -37,14 +38,13 @@ func init() {
 }
 
 func runFormat(cmd *cobra.Command, args []string) error {
-	device, err := getDevice()
-	if err != nil {
-		return err
-	}
-
 	// Confirm format unless force flag is set
 	if !forceFlag {
-		fmt.Println("WARNING: This will ERASE ALL FILES on the PMP300!")
+		targetStorage := "internal flash"
+		if externalFlag { // externalFlag is now global
+			targetStorage = "external SmartMedia card"
+		}
+		fmt.Printf("WARNING: This will ERASE ALL FILES on the PMP300's %s!\n", targetStorage)
 		fmt.Print("Are you sure you want to format the device? (y/N): ")
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
@@ -58,22 +58,24 @@ func runFormat(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("Connecting to %s...\n", device)
-
-	port, err := arduino.Open(device)
+	pmp, port, err := getInitializedPMPDevice()
 	if err != nil {
-		return fmt.Errorf("failed to open Arduino: %w", err)
+		return err
 	}
 	defer port.Close()
 
-	pmp := pmp300.New(port)
+	if externalFlag { // externalFlag is now global
+		// Check if external storage is present and formatted
+		present, err := pmp.DetectExternalStorage()
 
-	fmt.Println("Initializing PMP300...")
-	if err := pmp.Initialize(); err != nil {
-		return fmt.Errorf("initialization failed: %w", err)
+		if err != nil { // This means "present but corrupted"
+			fmt.Printf("Warning: %v. Attempting to format anyway.\n", err)
+		} else if !present { // This means "not present/unreadable at low level"
+			return fmt.Errorf("external SmartMedia card not found or unreadable")
+		}
 	}
 
-	fmt.Println("Formatting device...")
+	fmt.Printf("Formatting %s...\n", pmp.GetCurrentStorage().String())
 	if checkBadBlocksFlag {
 		fmt.Println("Bad block checking enabled - this will take a VERY long time!")
 	}
@@ -86,7 +88,17 @@ func runFormat(cmd *cobra.Command, args []string) error {
 
 	// Show device info
 	info, err := pmp.GetDeviceInfo()
-	if err == nil {
+	if err != nil {
+		fmt.Printf("Warning: Could not get device info after format (checksum or parsing error): %v\n", err)
+		// Try to proceed with what info we have, if any was returned
+		if info != nil {
+			totalMB := float64(info.BlocksAvailable) * 32.0 / 1024.0
+			fmt.Printf("Device ready: %.1f MB, %d blocks\n", totalMB, info.BlocksAvailable)
+			if info.BlocksBad > 0 {
+				fmt.Printf("Bad blocks found: %d\n", info.BlocksBad)
+			}
+		}
+	} else {
 		totalMB := float64(info.BlocksAvailable) * 32.0 / 1024.0
 		fmt.Printf("Device ready: %.1f MB, %d blocks\n", totalMB, info.BlocksAvailable)
 		if info.BlocksBad > 0 {

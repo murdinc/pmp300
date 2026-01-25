@@ -57,7 +57,7 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get device info: %w", err)
 	}
 
-	fmt.Println("\n=== PMP300 Device Information ===\n")
+	fmt.Println("\n=== PMP300 Device Information ===")
 
 	// Storage information - C++ fields: BlocksAvailable=total, BlocksRemaining=free, BlocksUsed=used
 	usedMB := float64(info.BlocksUsed) * 32.0 / 1024.0
