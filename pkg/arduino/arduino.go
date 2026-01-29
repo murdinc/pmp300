@@ -49,7 +49,7 @@ func (v Version) String() string {
 // Open opens connection to Arduino on specified serial device
 func Open(device string) (*Port, error) {
 	mode := &serial.Mode{
-		BaudRate: 115200,
+		BaudRate: 500000,
 		DataBits: 8,
 		Parity:   serial.NoParity,
 		StopBits: serial.OneStopBit,

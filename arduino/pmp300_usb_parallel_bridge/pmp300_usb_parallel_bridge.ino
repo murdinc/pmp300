@@ -58,7 +58,7 @@
 // PROTOCOL CONSTANTS
 // ============================================================================
 
-#define SERIAL_BAUD_RATE 115200
+#define SERIAL_BAUD_RATE 500000
 
 // Commands (Host -> Arduino)
 #define CMD_PING             'P'  // Connection test
