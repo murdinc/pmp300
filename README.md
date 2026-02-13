@@ -1,8 +1,14 @@
 # Diamond Rio PMP300 Management Tool
 
-Complete solution for managing the Diamond Rio PMP300 MP3 player on modern computers.
+![Complete USB to Parallel Port Adapter Harness](images/full-cable-harness.jpeg)
 
-The PMP300 was one of the first portable MP3 players (1998). This project provides a CLI tool and Arduino-based USB interface to use it with modern computers that lack parallel ports.
+The Diamond Rio PMP300, released in 1998, was one of the first commercially successful portable MP3 players and a landmark device in digital audio history. However, the PMP300 communicates exclusively through a parallel port (DB-25) interface—a connection type that has been absent from consumer computers for over two decades.
+
+This project provides a complete solution for bridging that gap. By utilizing an Arduino microcontroller as a USB-to-parallel-port adapter, combined with a purpose-built command-line interface, you can manage your PMP300 on any modern computer with a USB port. The Arduino handles the precise timing and signal translation required by the PMP300's parallel protocol, while the CLI provides intuitive commands for uploading music, managing files, and configuring the device.
+
+Whether you're preserving vintage hardware, exploring retro computing, or simply want to use your original PMP300 with contemporary systems, this tool makes it possible.
+
+![Arduino and Parallel Port Wiring](images/arduino-and-parallel-port.jpeg)
 
 ## Quick Start
 
@@ -32,6 +38,8 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed 5-minute setup guide.
 - Firmware updates (no public protocol exists)
 
 ## CLI Commands
+
+![CLI Screenshot](images/cli-screenshot.png)
 
 ```bash
 pmp300 test                          # Test Arduino and PMP300 connection
