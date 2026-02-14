@@ -45,14 +45,15 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed 5-minute setup guide.
 pmp300 test                          # Test Arduino and PMP300 connection
 pmp300 flash                         # Flash Arduino with firmware
 pmp300 list                          # List all files
+pmp300 list --external               # List files on SmartMedia card
 pmp300 info                          # Show device information
 pmp300 upload song.mp3               # Upload file(s)
+pmp300 upload --external song.mp3    # Upload to SmartMedia card
 pmp300 download song.mp3             # Download file
 pmp300 delete song.mp3               # Delete file(s)
 pmp300 move 3 1                      # Rearrange playback order
 pmp300 format                        # Format device
 pmp300 storage list                  # Show available storage (internal/external)
-pmp300 storage switch external       # Switch to SmartMedia card
 pmp300 version                       # Show version
 ```
 
@@ -189,17 +190,11 @@ pmp300 list --verbose
 # Check if SmartMedia card is inserted
 pmp300 storage list
 
-# Switch to external SmartMedia card
-pmp300 storage switch external
-
 # Upload to SmartMedia card
-pmp300 upload ~/Music/album/*.mp3
+pmp300 upload --external ~/Music/album/*.mp3
 
 # List files on SmartMedia
-pmp300 list
-
-# Switch back to internal
-pmp300 storage switch internal
+pmp300 list --external
 
 # Rearrange songs
 pmp300 move 5 1    # Move track 5 to first position

@@ -55,6 +55,8 @@ List all files on the device.
 ```bash
 pmp300 list                    # Simple listing
 pmp300 list --verbose          # Detailed with block info
+pmp300 list --external         # List files on SmartMedia card
+pmp300 list --tags             # Show ID3 tags (slower)
 ```
 
 ### `pmp300 info`
@@ -71,6 +73,8 @@ Upload files to the PMP300.
 pmp300 upload song.mp3                   # Upload single file
 pmp300 upload *.mp3                      # Upload multiple files
 pmp300 upload ~/Music/album/*.mp3        # Upload from path
+pmp300 upload --external song.mp3        # Upload to SmartMedia card
+pmp300 upload --directory                # Upload all MP3s in current dir
 ```
 
 ### `pmp300 download` (aliases: `get`, `pull`)
@@ -111,6 +115,13 @@ pmp300 format --force                   # Skip confirmation
 ```
 
 **WARNING**: Format erases all files!
+
+### `pmp300 storage list`
+Show available storage devices and their status.
+
+```bash
+pmp300 storage list            # Show internal flash and SmartMedia info
+```
 
 ## Global Flags
 

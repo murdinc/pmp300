@@ -28,22 +28,10 @@ var storageListCmd = &cobra.Command{
 	RunE:  runStorageList,
 }
 
-var storageSwitchCmd = &cobra.Command{
-	Use:   "switch <internal|external>",
-	Short: "Switch to internal or external storage",
-	Long: `Switch between internal flash and external SmartMedia card.
-
-Examples:
-  pmp300 storage switch internal     # Use internal flash
-  pmp300 storage switch external     # Use external SmartMedia card`,
-	Args: cobra.ExactArgs(1),
-	RunE: runStorageSwitch,
-}
 
 func init() {
 	rootCmd.AddCommand(storageCmd)
 	storageCmd.AddCommand(storageListCmd)
-	storageCmd.AddCommand(storageSwitchCmd)
 }
 
 func runStorageList(cmd *cobra.Command, args []string) error {
@@ -107,66 +95,8 @@ func runStorageList(cmd *cobra.Command, args []string) error {
 	// Switch back to original
 	pmp.SwitchStorage(current)
 
-	fmt.Println("\nUse 'pmp300 storage switch <internal|external>' to change active storage.")
+	fmt.Println("\nUse --external flag with commands to access SmartMedia card.")
 
 	return nil
 }
 
-func runStorageSwitch(cmd *cobra.Command, args []string) error {
-	storageType := args[0]
-
-	var storage pmp300.StorageType
-	switch storageType {
-	case "internal":
-		storage = pmp300.StorageInternal
-	case "external":
-		storage = pmp300.StorageExternal
-	default:
-		return fmt.Errorf("invalid storage type: %s (must be 'internal' or 'external')", storageType)
-	}
-
-	device, err := getDevice()
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Connecting to %s...\n", device)
-
-	port, err := arduino.Open(device)
-	if err != nil {
-		return fmt.Errorf("failed to open Arduino: %w", err)
-	}
-	defer port.Close()
-
-	pmp := pmp300.New(port)
-
-	fmt.Println("Initializing PMP300...")
-	if err := pmp.Initialize(); err != nil {
-		return fmt.Errorf("initialization failed: %w", err)
-	}
-
-	fmt.Printf("Switching to %s...\n", storage)
-	if err := pmp.SwitchStorage(storage); err != nil {
-		return fmt.Errorf("switch failed: %w", err)
-	}
-
-	// Verify by trying to read directory
-	info, err := pmp.GetDeviceInfo()
-	if err != nil {
-		return fmt.Errorf("switched, but cannot read storage: %w\nMake sure storage is formatted and accessible", err)
-	}
-
-	fmt.Printf("✓ Switched to %s\n\n", storage)
-
-	totalMB := float64(info.BlocksAvailable) * 32.0 / 1024.0
-	usedMB := float64(info.BlocksUsed) * 32.0 / 1024.0
-
-	fmt.Printf("Storage info:\n")
-	fmt.Printf("  Capacity: %.1f MB\n", totalMB)
-	fmt.Printf("  Used:     %.1f MB\n", usedMB)
-	fmt.Printf("  Files:    %d\n", info.EntryCount)
-
-	fmt.Println("\nAll subsequent commands will use this storage until you switch again.")
-
-	return nil
-}
